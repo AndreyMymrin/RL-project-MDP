@@ -1,2 +1,2 @@
-# RL-progect-MDP
+# RL-project-MDP
 Some description
