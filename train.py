@@ -145,6 +145,175 @@ class ReinforceAgent:
         self.b += self.lr * advantage * grad_logits
 
 
+class ReinforceAgentMLP:
+    def __init__(
+        self,
+        window=20,
+        cash=1000.0,
+        stocks=0.0,
+        lr=0.01,
+        gamma=0.99,
+        seed=42,
+        epsilon_start=0.3,
+        epsilon_end=0.02,
+        epsilon_decay=0.999,
+        baseline_beta=0.05,
+        hidden_size=32,
+    ):
+        self.name = "REINFORCE MLP"
+        self.window = window
+        self.cash = cash
+        self.stocks = stocks
+        self.lr = lr
+        self.gamma = gamma
+        self.rng = np.random.default_rng(seed)
+        self.epsilon_start = epsilon_start
+        self.epsilon_end = epsilon_end
+        self.epsilon_decay = epsilon_decay
+        self.baseline_beta = baseline_beta
+
+        self.actions = [-1.0, 0.0, 1.0]
+        self.n_actions = len(self.actions)
+        self.n_features = 6
+        self.hidden_size = hidden_size
+        self.w1 = self.rng.normal(0.0, 0.05, size=(self.n_features, self.hidden_size))
+        self.b1 = np.zeros(self.hidden_size)
+        self.w2 = self.rng.normal(0.0, 0.05, size=(self.hidden_size, self.n_actions))
+        self.b2 = np.zeros(self.n_actions)
+
+        self.ep_states = []
+        self.ep_actions = []
+        self.ep_rewards = []
+        self.total_steps = 0
+        self.epsilon = epsilon_start
+        self.running_return = 0.0
+        self.baseline = 0.0
+        self.trade_history = []
+
+    def reset(self, cash=1000.0, stocks=0.0):
+        self.cash = cash
+        self.stocks = stocks
+        self.ep_states = []
+        self.ep_actions = []
+        self.ep_rewards = []
+        self.running_return = 0.0
+        self.baseline = 0.0
+        self.total_steps = 0
+        self.epsilon = self.epsilon_start
+        self.trade_history = []
+
+    def capital(self, price):
+        return self.cash + self.stocks * price
+
+    def _features(self, obs):
+        if len(obs) < 2:
+            return np.zeros(self.n_features)
+        window = obs[-self.window:]
+        price = window[-1]
+        prev = window[-2]
+        ret = (price - prev) / max(1.0, prev)
+        short = np.mean(window[-min(5, len(window)):])
+        long = np.mean(window)
+        ma_diff = (short - long) / max(1.0, long)
+        vol = np.std(window) / max(1.0, long)
+        mom = (price - window[0]) / max(1.0, window[0])
+        return np.array([1.0, ret, ma_diff, vol, mom, price / 100.0])
+
+    def _policy(self, feats):
+        h = feats @ self.w1 + self.b1
+        h = np.maximum(0.0, h)
+        logits = h @ self.w2 + self.b2
+        logits = logits - np.max(logits)
+        exp = np.exp(logits)
+        return exp / np.sum(exp)
+
+    def _forward(self, feats):
+        h = feats @ self.w1 + self.b1
+        h = np.maximum(0.0, h)
+        logits = h @ self.w2 + self.b2
+        logits = logits - np.max(logits)
+        exp = np.exp(logits)
+        probs = exp / np.sum(exp)
+        return h, probs
+
+    def _backward(self, feats, h, probs, a_idx, scale):
+        grad_logits = -probs
+        grad_logits[a_idx] += 1.0
+        grad_logits *= scale
+
+        grad_w2 = np.outer(h, grad_logits)
+        grad_b2 = grad_logits
+
+        grad_h = self.w2 @ grad_logits
+        grad_h[h <= 0.0] = 0.0
+
+        grad_w1 = np.outer(feats, grad_h)
+        grad_b1 = grad_h
+
+        self.w2 += self.lr * grad_w2
+        self.b2 += self.lr * grad_b2
+        self.w1 += self.lr * grad_w1
+        self.b1 += self.lr * grad_b1
+
+    def act(self, obs, explore=True, step_index=None):
+        feats = self._features(obs)
+        probs = self._policy(feats)
+        if explore:
+            self.total_steps += 1
+            self.epsilon = max(self.epsilon_end, self.epsilon * self.epsilon_decay)
+            if self.rng.random() < self.epsilon:
+                a_idx = int(self.rng.integers(self.n_actions))
+            else:
+                a_idx = self.rng.choice(self.n_actions, p=probs)
+        else:
+            a_idx = int(np.argmax(probs))
+        action = self.actions[a_idx]
+
+        price = obs[-1]
+        if action > 0 and price > 0:
+            spend = self.cash * action
+            self.stocks += spend / price
+            self.cash -= spend
+            if step_index is not None:
+                self.trade_history.append((step_index, price, "buy"))
+        elif action < 0:
+            sell = self.stocks * (-action)
+            self.stocks -= sell
+            self.cash += sell * price
+            if step_index is not None:
+                self.trade_history.append((step_index, price, "sell"))
+
+        return feats, a_idx
+
+    def record(self, feats, action_idx, reward):
+        self.ep_states.append(feats)
+        self.ep_actions.append(action_idx)
+        self.ep_rewards.append(reward)
+
+    def update(self):
+        if not self.ep_rewards:
+            return
+        returns = []
+        g = 0.0
+        for r in reversed(self.ep_rewards):
+            g = r + self.gamma * g
+            returns.append(g)
+        returns = np.array(list(reversed(returns)))
+        if np.std(returns) > 1e-6:
+            returns = (returns - np.mean(returns)) / (np.std(returns) + 1e-8)
+
+        for feats, a_idx, g in zip(self.ep_states, self.ep_actions, returns):
+            h, probs = self._forward(feats)
+            self._backward(feats, h, probs, a_idx, g)
+
+    def update_step(self, feats, a_idx, reward):
+        self.running_return = self.gamma * self.running_return + reward
+        self.baseline = (1.0 - self.baseline_beta) * self.baseline + self.baseline_beta * self.running_return
+        advantage = self.running_return - self.baseline
+        h, probs = self._forward(feats)
+        self._backward(feats, h, probs, a_idx, advantage)
+
+
 def simulate_episode(
     agent,
     steps=200,
