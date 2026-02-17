@@ -158,7 +158,7 @@ class ReinforceAgentMLP:
         epsilon_end=0.02,
         epsilon_decay=0.999,
         baseline_beta=0.05,
-        hidden_size=32,
+        hidden_size=128,
     ):
         self.name = "REINFORCE MLP"
         self.window = window
@@ -178,8 +178,12 @@ class ReinforceAgentMLP:
         self.hidden_size = hidden_size
         self.w1 = self.rng.normal(0.0, 0.05, size=(self.n_features, self.hidden_size))
         self.b1 = np.zeros(self.hidden_size)
-        self.w2 = self.rng.normal(0.0, 0.05, size=(self.hidden_size, self.n_actions))
-        self.b2 = np.zeros(self.n_actions)
+        self.w2 = self.rng.normal(0.0, 0.05, size=(self.hidden_size, self.hidden_size))
+        self.b2 = np.zeros(self.hidden_size)
+        self.w3 = self.rng.normal(0.0, 0.05, size=(self.hidden_size, self.hidden_size))
+        self.b3 = np.zeros(self.hidden_size)
+        self.w4 = self.rng.normal(0.0, 0.05, size=(self.hidden_size, self.n_actions))
+        self.b4 = np.zeros(self.n_actions)
 
         self.ep_states = []
         self.ep_actions = []
@@ -220,36 +224,61 @@ class ReinforceAgentMLP:
         return np.array([1.0, ret, ma_diff, vol, mom, price / 100.0])
 
     def _policy(self, feats):
-        h = feats @ self.w1 + self.b1
-        h = np.maximum(0.0, h)
-        logits = h @ self.w2 + self.b2
+        h1 = feats @ self.w1 + self.b1
+        h1 = np.maximum(0.0, h1)
+        h2 = h1 @ self.w2 + self.b2
+        h2 = np.maximum(0.0, h2)
+        h3 = h2 @ self.w3 + self.b3
+        h3 = np.maximum(0.0, h3)
+        logits = h3 @ self.w4 + self.b4
         logits = logits - np.max(logits)
         exp = np.exp(logits)
         return exp / np.sum(exp)
 
     def _forward(self, feats):
-        h = feats @ self.w1 + self.b1
-        h = np.maximum(0.0, h)
-        logits = h @ self.w2 + self.b2
+        h1 = feats @ self.w1 + self.b1
+        h1 = np.maximum(0.0, h1)
+        h2 = h1 @ self.w2 + self.b2
+        h2 = np.maximum(0.0, h2)
+        h3 = h2 @ self.w3 + self.b3
+        h3 = np.maximum(0.0, h3)
+        logits = h3 @ self.w4 + self.b4
         logits = logits - np.max(logits)
         exp = np.exp(logits)
         probs = exp / np.sum(exp)
-        return h, probs
+        return (h1, h2, h3), probs
 
-    def _backward(self, feats, h, probs, a_idx, scale):
+    def _backward(self, feats, hs, probs, a_idx, scale):
+        h1, h2, h3 = hs
         grad_logits = -probs
         grad_logits[a_idx] += 1.0
         grad_logits *= scale
 
-        grad_w2 = np.outer(h, grad_logits)
-        grad_b2 = grad_logits
+        grad_w4 = np.outer(h3, grad_logits)
+        grad_b4 = grad_logits
 
-        grad_h = self.w2 @ grad_logits
-        grad_h[h <= 0.0] = 0.0
+        grad_h3 = self.w4 @ grad_logits
+        grad_h3[h3 <= 0.0] = 0.0
 
-        grad_w1 = np.outer(feats, grad_h)
-        grad_b1 = grad_h
+        grad_w3 = np.outer(h2, grad_h3)
+        grad_b3 = grad_h3
 
+        grad_h2 = self.w3 @ grad_h3
+        grad_h2[h2 <= 0.0] = 0.0
+
+        grad_w2 = np.outer(h1, grad_h2)
+        grad_b2 = grad_h2
+
+        grad_h1 = self.w2 @ grad_h2
+        grad_h1[h1 <= 0.0] = 0.0
+
+        grad_w1 = np.outer(feats, grad_h1)
+        grad_b1 = grad_h1
+
+        self.w4 += self.lr * grad_w4
+        self.b4 += self.lr * grad_b4
+        self.w3 += self.lr * grad_w3
+        self.b3 += self.lr * grad_b3
         self.w2 += self.lr * grad_w2
         self.b2 += self.lr * grad_b2
         self.w1 += self.lr * grad_w1
@@ -303,15 +332,15 @@ class ReinforceAgentMLP:
             returns = (returns - np.mean(returns)) / (np.std(returns) + 1e-8)
 
         for feats, a_idx, g in zip(self.ep_states, self.ep_actions, returns):
-            h, probs = self._forward(feats)
-            self._backward(feats, h, probs, a_idx, g)
+            hs, probs = self._forward(feats)
+            self._backward(feats, hs, probs, a_idx, g)
 
     def update_step(self, feats, a_idx, reward):
         self.running_return = self.gamma * self.running_return + reward
         self.baseline = (1.0 - self.baseline_beta) * self.baseline + self.baseline_beta * self.running_return
         advantage = self.running_return - self.baseline
-        h, probs = self._forward(feats)
-        self._backward(feats, h, probs, a_idx, advantage)
+        hs, probs = self._forward(feats)
+        self._backward(feats, hs, probs, a_idx, advantage)
 
 
 def simulate_episode(
