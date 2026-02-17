@@ -116,7 +116,7 @@ def main():
         b.stocks = 0.0
         if hasattr(b, 'first_step'): b.first_step = True
 
-    ags = baselines + [agent]
+    ags = [agent] + baselines
     
     v = Visualizer(m, ags, max_frames)
     
