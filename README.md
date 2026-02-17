@@ -250,28 +250,20 @@ Controls:
 
 Planned improvements (aligned with the original idea):
 
-1. **Continuous action policy** `k ∈ [-1, 1]` (buy/sell fraction)
-2. Use an **MLP policy** with richer inputs:
+1. Use an **MLP policy** with richer inputs:
 
    * min / max / mean over last `n` steps (e.g., 50)
    * short history window of last `m` steps (e.g., 10)
-   * current cash, current stocks, current price
-3. Add an explicit **train/eval split** for historical mode
-4. Logging:
+2. Add an explicit **train/eval split** for historical mode
+3. Logging:
 
    * reproducible seeds everywhere
    * saved runs (CSV/JSON)
    * training curves (reward, return, Sharpe)
-5. Optional: implement PPO/SAC via a standard RL library once the environment API is stabilized
+4. Optional: implement PPO/SAC via a standard RL library once the environment API is stabilized
 
 ---
 
 ### Notes
 
 This is a research/learning project, not financial advice and not a production trading system.
-
-```
-
-If you want, I can also rewrite `README.md` so it matches your repo’s current code even more tightly (exact parameters from `main.py`, current defaults, and a “Troubleshooting” section).
-::contentReference[oaicite:0]{index=0}
-```
