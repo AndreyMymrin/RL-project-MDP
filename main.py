@@ -56,7 +56,7 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
-from agents import RandomAgent, BuyAndHoldAgent
+from agents import RandomAgent, BuyAndHoldAgent, InsiderAgent
 from agents import Bill, BollingerBandsAgent, Mark, MovingAverageCrossoverAgent, RSIAgent
 from market import Market
 from train import ReinforceAgent, simulate_episode
@@ -79,6 +79,7 @@ def main():
     print("Final Evaluation started ...")
 
     baselines = [
+        
         Mark(1000.0, 0.0),
         Bill(1000.0, 0.0),
         MovingAverageCrossoverAgent(1000.0, 0.0),
@@ -93,7 +94,7 @@ def main():
         agent, 
         baselines, 
         steps=steps, 
-        #seed=42, 
+        # seed=42, 
         start_price=5.0
     )
 

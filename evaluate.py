@@ -118,8 +118,8 @@ def evaluate_strategies(
     baselines, 
     steps=500, 
     window=20, 
-    n_runs=20,  # Количество запусков для усреднения
-    # base_seed=42, 
+    n_runs=100,  # Количество запусков для усреднения
+    base_seed=42, 
     start_price=10.0
 ):
     """
@@ -135,7 +135,8 @@ def evaluate_strategies(
     print(f"--- Starting Monte Carlo Evaluation: {n_runs} runs ---")
 
     for run in range(n_runs):
-        # run_seed = base_seed + run
+        run_seed = base_seed + run
+        np.random.seed(run_seed)
         # market = market_class(start_price=start_price, window=window, seed=run_seed)
         market = market_class(start_price=start_price, window=window)
 
@@ -206,9 +207,9 @@ def plot_equity_curves(histories):
         else:
             plt.plot(history, label=name, linewidth=1.5, color=color, alpha=0.7, linestyle='--')
             
-    plt.title("Сравнение эффективности стратегий (Equity Curves)")
-    plt.xlabel("Шаги (Time)")
-    plt.ylabel("Капитал ($)")
+    plt.title("Equity Curves Comparison")
+    plt.xlabel("Steps (Time)")
+    plt.ylabel("Capitel ($)")
     plt.legend()
     plt.grid(True, alpha=0.3)
     plt.show()
