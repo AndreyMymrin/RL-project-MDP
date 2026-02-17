@@ -32,7 +32,7 @@ class ReinforceAgent:
 
         self.actions = [-1.0, 0.0, 1.0]  # sell, hold, buy (fraction of holdings/cash)
         self.n_actions = len(self.actions)
-        self.n_features = 6
+        self.n_features = 10
         self.w = self.rng.normal(0.0, 0.01, size=(self.n_features, self.n_actions))
         self.b = np.zeros(self.n_actions)
 
@@ -60,19 +60,78 @@ class ReinforceAgent:
     def capital(self, price):
         return self.cash + self.stocks * price
 
+    def _ema(self, values, span):
+        if len(values) == 0:
+            return 0.0
+        alpha = 2.0 / (span + 1.0)
+        ema = values[0]
+        for v in values[1:]:
+            ema = alpha * v + (1.0 - alpha) * ema
+        return ema
+
+    def _rsi(self, values, period=14):
+        if len(values) < period + 1:
+            return 50.0
+        gains = 0.0
+        losses = 0.0
+        for i in range(-period, 0):
+            delta = values[i] - values[i - 1]
+            if delta >= 0:
+                gains += delta
+            else:
+                losses += -delta
+        if losses == 0.0:
+            return 100.0
+        rs = gains / losses
+        return 100.0 - (100.0 / (1.0 + rs))
+
     def _features(self, obs):
         if len(obs) < 2:
             return np.zeros(self.n_features)
         window = obs[-self.window:]
         price = window[-1]
         prev = window[-2]
-        ret = (price - prev) / max(1.0, prev)
+        ret_1 = (price - prev) / max(1.0, prev)
+
+        idx_3 = -4 if len(window) >= 4 else -2
+        prev_3 = window[idx_3]
+        ret_3 = (price - prev_3) / max(1.0, prev_3)
+
         short = np.mean(window[-min(5, len(window)):])
         long = np.mean(window)
         ma_diff = (short - long) / max(1.0, long)
+
+        ema_short = self._ema(window[-min(10, len(window)):], span=5)
+        ema_long = self._ema(window, span=20)
+        ema_diff = (ema_short - ema_long) / max(1.0, long)
+
         vol = np.std(window) / max(1.0, long)
         mom = (price - window[0]) / max(1.0, window[0])
-        return np.array([1.0, ret, ma_diff, vol, mom, price / 100.0])
+
+        rsi = self._rsi(window, period=14) / 100.0
+
+        std = np.std(window)
+        upper = long + 2.0 * std
+        lower = long - 2.0 * std
+        if upper - lower > 1e-6:
+            bb_pct = (price - lower) / (upper - lower)
+        else:
+            bb_pct = 0.5
+
+        zscore = (price - long) / (std + 1e-6)
+
+        return np.array([
+            1.0,
+            ret_1,
+            ret_3,
+            ma_diff,
+            ema_diff,
+            vol,
+            mom,
+            rsi,
+            bb_pct,
+            zscore,
+        ])
 
     def _policy(self, feats):
         logits = feats @ self.w + self.b
@@ -174,7 +233,7 @@ class ReinforceAgentMLP:
 
         self.actions = [-1.0, 0.0, 1.0]
         self.n_actions = len(self.actions)
-        self.n_features = 6
+        self.n_features = 10
         self.hidden_size = hidden_size
         self.w1 = self.rng.normal(0.0, 0.05, size=(self.n_features, self.hidden_size))
         self.b1 = np.zeros(self.hidden_size)
@@ -209,19 +268,78 @@ class ReinforceAgentMLP:
     def capital(self, price):
         return self.cash + self.stocks * price
 
+    def _ema(self, values, span):
+        if len(values) == 0:
+            return 0.0
+        alpha = 2.0 / (span + 1.0)
+        ema = values[0]
+        for v in values[1:]:
+            ema = alpha * v + (1.0 - alpha) * ema
+        return ema
+
+    def _rsi(self, values, period=14):
+        if len(values) < period + 1:
+            return 50.0
+        gains = 0.0
+        losses = 0.0
+        for i in range(-period, 0):
+            delta = values[i] - values[i - 1]
+            if delta >= 0:
+                gains += delta
+            else:
+                losses += -delta
+        if losses == 0.0:
+            return 100.0
+        rs = gains / losses
+        return 100.0 - (100.0 / (1.0 + rs))
+
     def _features(self, obs):
         if len(obs) < 2:
             return np.zeros(self.n_features)
         window = obs[-self.window:]
         price = window[-1]
         prev = window[-2]
-        ret = (price - prev) / max(1.0, prev)
+        ret_1 = (price - prev) / max(1.0, prev)
+
+        idx_3 = -4 if len(window) >= 4 else -2
+        prev_3 = window[idx_3]
+        ret_3 = (price - prev_3) / max(1.0, prev_3)
+
         short = np.mean(window[-min(5, len(window)):])
         long = np.mean(window)
         ma_diff = (short - long) / max(1.0, long)
+
+        ema_short = self._ema(window[-min(10, len(window)):], span=5)
+        ema_long = self._ema(window, span=20)
+        ema_diff = (ema_short - ema_long) / max(1.0, long)
+
         vol = np.std(window) / max(1.0, long)
         mom = (price - window[0]) / max(1.0, window[0])
-        return np.array([1.0, ret, ma_diff, vol, mom, price / 100.0])
+
+        rsi = self._rsi(window, period=14) / 100.0
+
+        std = np.std(window)
+        upper = long + 2.0 * std
+        lower = long - 2.0 * std
+        if upper - lower > 1e-6:
+            bb_pct = (price - lower) / (upper - lower)
+        else:
+            bb_pct = 0.5
+
+        zscore = (price - long) / (std + 1e-6)
+
+        return np.array([
+            1.0,
+            ret_1,
+            ret_3,
+            ma_diff,
+            ema_diff,
+            vol,
+            mom,
+            rsi,
+            bb_pct,
+            zscore,
+        ])
 
     def _policy(self, feats):
         h1 = feats @ self.w1 + self.b1
@@ -351,6 +469,8 @@ def simulate_episode(
     seed=None,
     train=True,
     online_update=True,
+    trade_penalty=0.01,
+    switch_penalty=0.02,
 ):
     rng = np.random.default_rng(seed)
     np_random_state = np.random.get_state()
@@ -359,12 +479,21 @@ def simulate_episode(
     market = Market(start_price=start_price, window=window)
     agent.reset(cash=1000.0, stocks=0.0)
 
+    prev_action = 0.0
     for _ in range(steps):
         prev_cap = agent.capital(market.price)
         obs = market.get_obs()
         feats, a_idx = agent.act(obs, explore=train)
         market.step()
         reward = agent.capital(market.price) - prev_cap
+        action_value = agent.actions[a_idx] if hasattr(agent, "actions") else 0.0
+        penalty = 0.0
+        if action_value != 0.0:
+            penalty += trade_penalty * market.price
+            if prev_action != 0.0:
+                penalty += switch_penalty * market.price
+        reward -= penalty
+        prev_action = action_value
         if train:
             if online_update:
                 agent.update_step(feats, a_idx, reward)

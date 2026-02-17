@@ -59,7 +59,7 @@ import matplotlib.pyplot as plt
 from agents import RandomAgent, BuyAndHoldAgent
 from agents import Bill, BollingerBandsAgent, Mark, MovingAverageCrossoverAgent, RSIAgent
 from market import Market
-from train import ReinforceAgent, ReinforceAgentMLP, simulate_episode
+from train import ReinforceAgent, simulate_episode
 from visualize import Visualizer
 from evaluate import evaluate_baselines, evaluate_strategies, plot_equity_curves
 
@@ -67,13 +67,9 @@ def main():
     episodes = 600
     steps = 400
     window = 20
-    use_mlp = False
 
     print(f"Started training for ({episodes} eposodes)...")
-    if use_mlp:
-        agent = ReinforceAgentMLP(window=window, lr=0.001, gamma=0.98, seed=42)
-    else:
-        agent = ReinforceAgent(window=window, lr=0.001, gamma=0.98, seed=42)
+    agent = ReinforceAgent(window=window, lr=0.001, gamma=0.98, seed=42)
     
     for ep in range(episodes):
         simulate_episode(agent, steps=steps, window=window, seed=ep, train=True, online_update=True)
@@ -97,7 +93,7 @@ def main():
         agent, 
         baselines, 
         steps=steps, 
-        # seed=42, 
+        #seed=42, 
         start_price=5.0
     )
 
