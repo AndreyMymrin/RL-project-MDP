@@ -118,7 +118,7 @@ def evaluate_strategies(
     baselines, 
     steps=500, 
     window=20, 
-    n_runs=10,  # Количество запусков для усреднения
+    n_runs=20,  # Количество запусков для усреднения
     # base_seed=42, 
     start_price=10.0
 ):
@@ -189,8 +189,8 @@ def evaluate_strategies(
     df = pd.DataFrame(final_results).set_index("Agent")
     # Округляем для красоты
     df = df.round(2)
-    
-    return df.sort_values(by="Avg Return (%)", ascending=False), last_run_histories
+    return df.sort_values(by="Avg Final Cap ($)", ascending=False), last_run_histories
+    # return df.sort_values(by="Avg Return (%)", ascending=False), last_run_histories
 
 def plot_equity_curves(histories):
     """Рисует графики роста капитала всех агентов."""
