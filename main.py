@@ -97,7 +97,7 @@ def main():
         agent, 
         baselines, 
         steps=steps, 
-        seed=42, 
+        # seed=42, 
         start_price=5.0
     )
 
