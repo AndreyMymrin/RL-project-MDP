@@ -1,11 +1,18 @@
 import numpy as np
 
 
+def _log_trade(agent, step_index, price, side, trade_value, confidence=1.0):
+    if step_index is None or trade_value <= 0:
+        return
+    agent.trade_history.append((int(step_index), float(price), str(side), float(trade_value), float(confidence)))
+
+
 class Mark:
     def __init__(self, cash=1000.0, stocks=0.0):
         self.name = "Cautious Mark"
         self.cash = cash
         self.stocks = stocks
+        self.trade_history = []
 
     def capital(self, price):
         return self.cash + self.stocks * price
@@ -17,11 +24,13 @@ class Mark:
                 amt = self.stocks * 0.1
                 self.stocks -= amt
                 self.cash += amt * price
+                _log_trade(self, step_index, price, "sell", amt * price, 1.0)
             elif obs[-3] > obs[-2] > obs[-1]:
                 if price > 0:
                     cost = self.cash * 0.1
                     self.stocks += cost / price
                     self.cash -= cost
+                    _log_trade(self, step_index, price, "buy", cost, 1.0)
 
 
 class Bill:
@@ -29,6 +38,7 @@ class Bill:
         self.name = "Risky Bill"
         self.cash = cash
         self.stocks = stocks
+        self.trade_history = []
 
     def capital(self, price):
         return self.cash + self.stocks * price
@@ -37,11 +47,15 @@ class Bill:
         if len(obs) > 0:
             price = obs[-1]
             if price == min(obs) and price > 0:
+                spend = self.cash
                 self.stocks += self.cash / price
                 self.cash = 0.0
+                _log_trade(self, step_index, price, "buy", spend, 1.0)
             elif price == max(obs):
+                sell_value = self.stocks * price
                 self.cash += self.stocks * price
                 self.stocks = 0.0
+                _log_trade(self, step_index, price, "sell", sell_value, 1.0)
 
 
 class MovingAverageCrossoverAgent:
@@ -52,6 +66,7 @@ class MovingAverageCrossoverAgent:
         self.short_window = short_window
         self.long_window = long_window
         self.prev_diff = 0.0
+        self.trade_history = []
 
     def capital(self, price):
         return self.cash + self.stocks * price
@@ -59,8 +74,8 @@ class MovingAverageCrossoverAgent:
     def act(self, obs, step_index=None):
         if len(obs) < self.long_window:
             return
-        short = np.mean(obs[-self.short_window :])
-        long = np.mean(obs[-self.long_window :])
+        short = np.mean(obs[-self.short_window:])
+        long = np.mean(obs[-self.long_window:])
         diff = short - long
         price = obs[-1]
 
@@ -68,10 +83,12 @@ class MovingAverageCrossoverAgent:
             spend = self.cash * 0.5
             self.stocks += spend / price
             self.cash -= spend
+            _log_trade(self, step_index, price, "buy", spend, 1.0)
         elif self.prev_diff >= 0.0 and diff < 0.0:
             sell = self.stocks * 0.5
             self.stocks -= sell
             self.cash += sell * price
+            _log_trade(self, step_index, price, "sell", sell * price, 1.0)
 
         self.prev_diff = diff
 
@@ -84,6 +101,7 @@ class RSIAgent:
         self.period = period
         self.low = low
         self.high = high
+        self.trade_history = []
 
     def capital(self, price):
         return self.cash + self.stocks * price
@@ -117,10 +135,12 @@ class RSIAgent:
             spend = self.cash * 0.5
             self.stocks += spend / price
             self.cash -= spend
+            _log_trade(self, step_index, price, "buy", spend, 1.0)
         elif rsi >= self.high:
             sell = self.stocks * 0.5
             self.stocks -= sell
             self.cash += sell * price
+            _log_trade(self, step_index, price, "sell", sell * price, 1.0)
 
 
 class BollingerBandsAgent:
@@ -130,6 +150,7 @@ class BollingerBandsAgent:
         self.stocks = stocks
         self.window = window
         self.num_std = num_std
+        self.trade_history = []
 
     def capital(self, price):
         return self.cash + self.stocks * price
@@ -137,7 +158,7 @@ class BollingerBandsAgent:
     def act(self, obs, step_index=None):
         if len(obs) < self.window:
             return
-        window = np.array(obs[-self.window :])
+        window = np.array(obs[-self.window:])
         mid = np.mean(window)
         std = np.std(window)
         upper = mid + self.num_std * std
@@ -148,10 +169,12 @@ class BollingerBandsAgent:
             spend = self.cash * 0.5
             self.stocks += spend / price
             self.cash -= spend
+            _log_trade(self, step_index, price, "buy", spend, 1.0)
         elif price >= upper:
             sell = self.stocks * 0.5
             self.stocks -= sell
             self.cash += sell * price
+            _log_trade(self, step_index, price, "sell", sell * price, 1.0)
 
 
 class RandomAgent:
@@ -160,23 +183,28 @@ class RandomAgent:
         self.cash = cash
         self.stocks = stocks
         self.rng = np.random.default_rng(seed)
+        self.trade_history = []
 
     def capital(self, price):
         return self.cash + self.stocks * price
 
     def act(self, obs, step_index=None):
-        if len(obs) == 0: return
+        if len(obs) == 0:
+            return
         price = obs[-1]
-        action = self.rng.choice(['buy', 'sell', 'hold'])
-        
-        if action == 'buy' and price > 0:
+        action = self.rng.choice(["buy", "sell", "hold"])
+
+        if action == "buy" and price > 0:
             amt = self.cash * 0.2
             self.stocks += amt / price
             self.cash -= amt
-        elif action == 'sell' and self.stocks > 0:
+            _log_trade(self, step_index, price, "buy", amt, 1.0)
+        elif action == "sell" and self.stocks > 0:
             amt = self.stocks * 0.2
             self.stocks -= amt
             self.cash += amt * price
+            _log_trade(self, step_index, price, "sell", amt * price, 1.0)
+
 
 class BuyAndHoldAgent:
     def __init__(self, cash=1000.0, stocks=0.0):
@@ -184,6 +212,7 @@ class BuyAndHoldAgent:
         self.cash = cash
         self.stocks = stocks
         self.first_step = True
+        self.trade_history = []
 
     def capital(self, price):
         return self.cash + self.stocks * price
@@ -192,7 +221,8 @@ class BuyAndHoldAgent:
         if self.first_step and len(obs) > 0:
             price = obs[-1]
             if price > 0:
+                spend = self.cash
                 self.stocks += self.cash / price
                 self.cash = 0.0
-                self.first_step = False            
-
+                self.first_step = False
+                _log_trade(self, step_index, price, "buy", spend, 1.0)
