@@ -154,3 +154,45 @@ class BollingerBandsAgent:
             self.cash += sell * price
 
 
+class RandomAgent:
+    def __init__(self, cash=1000.0, stocks=0.0, seed=42):
+        self.name = "Random Monkey"
+        self.cash = cash
+        self.stocks = stocks
+        self.rng = np.random.default_rng(seed)
+
+    def capital(self, price):
+        return self.cash + self.stocks * price
+
+    def act(self, obs, step_index=None):
+        if len(obs) == 0: return
+        price = obs[-1]
+        action = self.rng.choice(['buy', 'sell', 'hold'])
+        
+        if action == 'buy' and price > 0:
+            amt = self.cash * 0.2
+            self.stocks += amt / price
+            self.cash -= amt
+        elif action == 'sell' and self.stocks > 0:
+            amt = self.stocks * 0.2
+            self.stocks -= amt
+            self.cash += amt * price
+
+class BuyAndHoldAgent:
+    def __init__(self, cash=1000.0, stocks=0.0):
+        self.name = "HODL"
+        self.cash = cash
+        self.stocks = stocks
+        self.first_step = True
+
+    def capital(self, price):
+        return self.cash + self.stocks * price
+
+    def act(self, obs, step_index=None):
+        if self.first_step and len(obs) > 0:
+            price = obs[-1]
+            if price > 0:
+                self.stocks += self.cash / price
+                self.cash = 0.0
+                self.first_step = False            
+
