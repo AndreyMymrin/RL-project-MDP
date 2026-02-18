@@ -59,7 +59,7 @@ import matplotlib.pyplot as plt
 from agents import RandomAgent, BuyAndHoldAgent, InsiderAgent
 from agents import Bill, BollingerBandsAgent, Mark, MovingAverageCrossoverAgent, RSIAgent
 from market import Market
-from train import ReinforceAgent, simulate_episode
+from train import ReinforceAgent, ReinforceAgentMLP, simulate_episode
 from visualize import Visualizer
 from evaluate import evaluate_baselines, evaluate_strategies, plot_equity_curves
 
@@ -81,7 +81,7 @@ def main():
     baselines = [
         # InsiderAgent(None, 1000.0, 0.0),
         Mark(1000.0, 0.0),
-        Bill(1000.0, 0.0),
+        #Bill(1000.0, 0.0),
         MovingAverageCrossoverAgent(1000.0, 0.0),
         RSIAgent(1000.0, 0.0),
         BollingerBandsAgent(1000.0, 0.0),

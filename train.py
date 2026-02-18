@@ -217,7 +217,7 @@ class ReinforceAgentMLP:
         epsilon_end=0.02,
         epsilon_decay=0.999,
         baseline_beta=0.05,
-        hidden_size=128,
+        hidden_size=256,
     ):
         self.name = "REINFORCE MLP"
         self.window = window
@@ -252,6 +252,8 @@ class ReinforceAgentMLP:
         self.running_return = 0.0
         self.baseline = 0.0
         self.trade_history = []
+        self.act_clip = 50.0
+        self.scale_clip = 5.0
 
     def reset(self, cash=1000.0, stocks=0.0):
         self.cash = cash
@@ -328,7 +330,7 @@ class ReinforceAgentMLP:
 
         zscore = (price - long) / (std + 1e-6)
 
-        return np.array([
+        feats = np.array([
             1.0,
             ret_1,
             ret_3,
@@ -340,33 +342,46 @@ class ReinforceAgentMLP:
             bb_pct,
             zscore,
         ])
+        return np.clip(feats, -5.0, 5.0)
 
     def _policy(self, feats):
         h1 = feats @ self.w1 + self.b1
         h1 = np.maximum(0.0, h1)
+        h1 = np.clip(h1, 0.0, self.act_clip)
         h2 = h1 @ self.w2 + self.b2
         h2 = np.maximum(0.0, h2)
+        h2 = np.clip(h2, 0.0, self.act_clip)
         h3 = h2 @ self.w3 + self.b3
         h3 = np.maximum(0.0, h3)
-        logits = h3 @ self.w4 + self.b4
-        logits = logits - np.max(logits)
-        exp = np.exp(logits)
-        return exp / np.sum(exp)
-
-    def _forward(self, feats):
-        h1 = feats @ self.w1 + self.b1
-        h1 = np.maximum(0.0, h1)
-        h2 = h1 @ self.w2 + self.b2
-        h2 = np.maximum(0.0, h2)
-        h3 = h2 @ self.w3 + self.b3
-        h3 = np.maximum(0.0, h3)
+        h3 = np.clip(h3, 0.0, self.act_clip)
         logits = h3 @ self.w4 + self.b4
         logits = logits - np.max(logits)
         exp = np.exp(logits)
         probs = exp / np.sum(exp)
+        if not np.all(np.isfinite(probs)):
+            return np.full(self.n_actions, 1.0 / self.n_actions)
+        return probs
+
+    def _forward(self, feats):
+        h1 = feats @ self.w1 + self.b1
+        h1 = np.maximum(0.0, h1)
+        h1 = np.clip(h1, 0.0, self.act_clip)
+        h2 = h1 @ self.w2 + self.b2
+        h2 = np.maximum(0.0, h2)
+        h2 = np.clip(h2, 0.0, self.act_clip)
+        h3 = h2 @ self.w3 + self.b3
+        h3 = np.maximum(0.0, h3)
+        h3 = np.clip(h3, 0.0, self.act_clip)
+        logits = h3 @ self.w4 + self.b4
+        logits = logits - np.max(logits)
+        exp = np.exp(logits)
+        probs = exp / np.sum(exp)
+        if not np.all(np.isfinite(probs)):
+            probs = np.full(self.n_actions, 1.0 / self.n_actions)
         return (h1, h2, h3), probs
 
     def _backward(self, feats, hs, probs, a_idx, scale):
+        scale = float(np.clip(scale, -self.scale_clip, self.scale_clip))
         h1, h2, h3 = hs
         grad_logits = -probs
         grad_logits[a_idx] += 1.0
@@ -469,8 +484,8 @@ def simulate_episode(
     seed=None,
     train=True,
     online_update=True,
-    trade_penalty=0.01,
-    switch_penalty=0.02,
+    trade_penalty=0.001,
+    switch_penalty=0.002,
 ):
     rng = np.random.default_rng(seed)
     np_random_state = np.random.get_state()
@@ -489,9 +504,9 @@ def simulate_episode(
         action_value = agent.actions[a_idx] if hasattr(agent, "actions") else 0.0
         penalty = 0.0
         if action_value != 0.0:
-            penalty += trade_penalty * market.price
+            penalty += trade_penalty * prev_cap
             if prev_action != 0.0:
-                penalty += switch_penalty * market.price
+                penalty += switch_penalty * prev_cap
         reward -= penalty
         prev_action = action_value
         if train:
