@@ -218,7 +218,9 @@ For each agent, evaluation computes:
 In `main.py`, the code builds a list of baselines and compares them against the RL agent.
 
 ---
+## Results
 
+![Alt text](results/Figure_1.png "Results on generated Markow Chain generated stocks")
 ## Visualization
 
 `visualize.py` provides a Matplotlib animation:
