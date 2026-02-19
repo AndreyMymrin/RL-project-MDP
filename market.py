@@ -186,7 +186,8 @@ class Market:
         if "Close" not in df.columns:
             raise ValueError("CSV must contain column 'Close'")
 
-        prices = df["Close"].values.astype(float)
+        prices = df["Close"].values.astype(float)[2000:]
+
 
         if len(prices) < 2:
             raise ValueError("Historical dataset too short")
@@ -200,6 +201,7 @@ class Market:
 
         self.price = float(prices[0])
         self.history = [self.price]
+
 
     def _step_historical(self):
         self.h_index += 1

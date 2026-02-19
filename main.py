@@ -67,9 +67,9 @@ def main():
     episodes = 600
     steps = 400
     window = 20
-
+    
     print(f"Started training for ({episodes} eposodes)...")
-    agent = ReinforceAgent(window=window, lr=0.001, gamma=0.98, seed=42)
+    agent = ReinforceAgent(window=window, lr=0.1, gamma=0.98, seed=42)
     
     for ep in range(episodes):
         simulate_episode(agent, steps=steps, window=window, seed=ep, train=True, online_update=True)
@@ -105,7 +105,7 @@ def main():
 
     print("\nVisualizer started ...")
     max_frames = 100
-    m = Market(start_price=5.0, window=window)
+    m = Market(mode = 'historical',start_price=5.0, window=window)
     
     agent.reset(cash=1000.0, stocks=0.0)
     for b in baselines:
@@ -114,7 +114,7 @@ def main():
         if hasattr(b, 'first_step'): b.first_step = True
 
     ags = [agent] + baselines
-    
+
     v = Visualizer(m, ags, max_frames)
     
     try:
