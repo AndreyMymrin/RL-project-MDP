@@ -79,7 +79,7 @@ def main():
     print("Final Evaluation started ...")
 
     baselines = [
-        
+        # InsiderAgent(None, 1000.0, 0.0),
         Mark(1000.0, 0.0),
         #Bill(1000.0, 0.0),
         MovingAverageCrossoverAgent(1000.0, 0.0),
@@ -112,7 +112,9 @@ def main():
         b.cash = 1000.0
         b.stocks = 0.0
         if hasattr(b, 'first_step'): b.first_step = True
-
+    
+    # insider = InsiderAgent(market = m, cash=1000.0, stocks=0.0)
+    # ags = [agent] + [insider] + baselines
     ags = [agent] + baselines
 
     v = Visualizer(m, ags, max_frames)

@@ -230,7 +230,7 @@ class BuyAndHoldAgent:
 class InsiderAgent:
     def __init__(self, market, cash=1000.0, stocks=0.0):
         self.name = "Insider (Whale)"
-        self.market = market  # Прямая ссылка на объект рынка
+        self.market = market  
         self.cash = cash
         self.stocks = stocks
 
@@ -243,23 +243,20 @@ class InsiderAgent:
         
         current_price = self.market.price
         
-        # Инсайдерская логика для синтетического рынка
         if self.market.mode == "synthetic":
-            # Состояния: 0 - Растет (Growing), 1 - Падает (Depressing), 2 - Волатилен (Volatile)
             market_state = self.market.state
             
-            if market_state == 0:  # Мы ЗНАЕМ, что рынок сейчас в фазе роста
+            if market_state == 0:  
                 if self.cash > 0:
                     self.stocks += self.cash / current_price
                     self.cash = 0.0
-            elif market_state == 1:  # Мы ЗНАЕМ, что рынок падает
+            elif market_state == 1:  
                 if self.stocks > 0:
                     self.cash += self.stocks * current_price
                     self.stocks = 0.0
-            else: # Волатильное состояние - торгуем осторожно
+            else: 
                 pass
                 
-        # Логика для исторического рынка (просто смотрим на цену на шаг вперед)
         elif self.market.mode == "historical":
             h_idx = self.market.h_index
             if h_idx + 1 < len(self.market.historical_prices):

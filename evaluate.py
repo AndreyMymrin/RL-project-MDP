@@ -42,75 +42,77 @@ def calculate_metrics(history):
 #     baselines, 
 #     steps=500, 
 #     window=20, 
-#     seed=42, 
+#     n_runs=100,  # Количество запусков для усреднения
+#     base_seed=42, 
 #     start_price=10.0
 # ):
 #     """
-#     Сравнивает RL агента с базовыми стратегиями на одних и тех же данных.
+#     Проводит несколько симуляций и возвращает усредненные метрики.
 #     """
-#     print(f"--- Started evaluation on {steps} steps (Seed: {seed}) ---")
-    
-#     # 1. Инициализация рынка
-#     # Фиксируем seed, чтобы все агенты торговали на ОДИНАКОВОМ рынке
-#     rng = np.random.default_rng(seed)
-#     np_random_state = np.random.get_state() # Сохраняем состояние, чтобы не сломать глобальный рандом
-    
-#     market = market_class(start_price=start_price, window=window)
-    
-#     # 2. Подготовка агентов
 #     all_agents = [rl_agent] + baselines
-#     histories = {agent.name: [agent.capital(start_price)] for agent in all_agents}
+#     # Словарь для хранения метрик каждого прогона: {Agent: {Metric: [values]}}
+#     multi_run_metrics = {agent.name: {"Return (%)": [], "Sharpe Ratio": [], "Max Drawdown (%)": [], "Final Capital ($)": []} for agent in all_agents}
     
-#     # Сбрасываем кэш агентов перед тестом
-#     for agent in all_agents:
-#         if hasattr(agent, 'reset'):
-#             agent.reset(cash=1000.0, stocks=0.0)
-#         else:
-#             agent.cash = 1000.0
-#             agent.stocks = 0.0
+#     # Для построения графиков сохраним историю последнего прогона
+#     last_run_histories = {}
 
-#     # 3. Цикл симуляции
-#     for step in range(steps):
-#         obs = market.get_obs()
-#         price = market.price
-        
+#     print(f"--- Starting Monte Carlo Evaluation: {n_runs} runs ---")
+
+#     for run in range(n_runs):
+#         run_seed = base_seed + run
+#         np.random.seed(run_seed)
+#         market = market_class(start_price=start_price, window=window)
+
+#         run_histories = {agent.name: [agent.capital(start_price)] for agent in all_agents}
 #         for agent in all_agents:
-#             # RL агент обычно требует explore=False на тесте
-#             if agent.name == rl_agent.name:
-#                 # Проверка сигнатуры метода, чтобы не упало с ошибкой
+#             if hasattr(agent, 'reset'):
+#                 agent.reset(cash=1000.0, stocks=0.0)
+#             else:
+#                 agent.cash, agent.stocks = 1000.0, 0.0
+#                 if hasattr(agent, 'prev_diff'): agent.prev_diff = 0.0
+#                 if hasattr(agent, 'first_step'): agent.first_step = True
+        
+#         for step in range(steps):
+#             obs = market.get_obs()
+#             price = market.price
+#             for agent in all_agents:
 #                 try:
 #                     agent.act(obs, explore=False)
 #                 except TypeError:
-#                     agent.act(obs) # Если у агента нет параметра explore
-#             else:
-#                 agent.act(obs)
-            
-#             # Записываем состояние портфеля
-#             val = agent.capital(price)
-#             histories[agent.name].append(val)
-            
-#         market.step()
-    
-#     # Возвращаем рандом в исходное состояние
-#     np.random.set_state(np_random_state)
+#                     agent.act(obs)
+                
+#                 run_histories[agent.name].append(agent.capital(price))
+#             market.step()
 
-#     # 4. Сбор результатов в таблицу
-#     results_data = []
-#     for agent_name, history in histories.items():
-#         ret, sharpe, mdd = calculate_metrics(history)
-#         results_data.append({
-#             "Agent": agent_name,
-#             "Return (%)": round(ret, 2),
-#             "Sharpe Ratio": round(sharpe, 2),
-#             "Max Drawdown (%)": round(mdd, 2),
-#             "Final Capital ($)": round(history[-1], 2)
-#         })
+#         for agent in all_agents:
+#             ret, sharpe, mdd = calculate_metrics(run_histories[agent.name])
+#             multi_run_metrics[agent.name]["Return (%)"].append(ret)
+#             multi_run_metrics[agent.name]["Sharpe Ratio"].append(sharpe)
+#             multi_run_metrics[agent.name]["Max Drawdown (%)"].append(mdd)
+#             multi_run_metrics[agent.name]["Final Capital ($)"].append(run_histories[agent.name][-1])
         
-#     df = pd.DataFrame(results_data)
-#     df.set_index("Agent", inplace=True)
-    
-#     # Сортируем по Доходности
-#     return df.sort_values(by="Return (%)", ascending=False), histories
+#         last_run_histories = run_histories
+#         print(f"Run {run+1}/{n_runs} completed.")
+
+#     final_results = []
+#     for agent_name, metrics in multi_run_metrics.items():
+#         final_results.append({
+#             "Agent": agent_name,
+#             "Avg Return (%)": np.mean(metrics["Return (%)"]),
+#             "Std Return": np.std(metrics["Return (%)"]), 
+#             "Avg Sharpe": np.mean(metrics["Sharpe Ratio"]),
+#             "Avg MaxDD (%)": np.mean(metrics["Max Drawdown (%)"]),
+#             "Avg Final Cap ($)": np.mean(metrics["Final Capital ($)"])
+#         })
+
+#     df = pd.DataFrame(final_results).set_index("Agent")
+#     df = df.round(2)
+#     return df.sort_values(by="Avg Final Cap ($)", ascending=False), last_run_histories
+#     # return df.sort_values(by="Avg Return (%)", ascending=False), last_run_histories
+
+import numpy as np
+import pandas as pd
+from agents import InsiderAgent
 
 def evaluate_strategies(
     market_class, 
@@ -118,18 +120,22 @@ def evaluate_strategies(
     baselines, 
     steps=500, 
     window=20, 
-    n_runs=100,  # Количество запусков для усреднения
+    n_runs=100, 
     base_seed=42, 
     start_price=10.0
 ):
-    """
-    Проводит несколько симуляций и возвращает усредненные метрики.
-    """
+    # insider = InsiderAgent(None, 1000.0, 0.0)
+    # all_agents = [rl_agent] + [insider] + baselines
     all_agents = [rl_agent] + baselines
-    # Словарь для хранения метрик каждого прогона: {Agent: {Metric: [values]}}
-    multi_run_metrics = {agent.name: {"Return (%)": [], "Sharpe Ratio": [], "Max Drawdown (%)": [], "Final Capital ($)": []} for agent in all_agents}
+    multi_run_metrics = {
+        agent.name: {
+            "Return (%)": [], 
+            "Sharpe Ratio": [], 
+            "Max Drawdown (%)": [], 
+            "Final Capital ($)": []
+        } for agent in all_agents
+    }
     
-    # Для построения графиков сохраним историю последнего прогона
     last_run_histories = {}
 
     print(f"--- Starting Monte Carlo Evaluation: {n_runs} runs ---")
@@ -137,71 +143,73 @@ def evaluate_strategies(
     for run in range(n_runs):
         run_seed = base_seed + run
         np.random.seed(run_seed)
-        # market = market_class(start_price=start_price, window=window, seed=run_seed)
+        
         market = market_class(start_price=start_price, window=window)
-
-        # Сброс агентов и подготовка локальных историй текущего прогона
-        run_histories = {agent.name: [agent.capital(start_price)] for agent in all_agents}
+        # insider = InsiderAgent(market=market, cash=1000.0, stocks=0.0)
+        
         for agent in all_agents:
-            if hasattr(agent, 'reset'):
-                agent.reset(cash=1000.0, stocks=0.0)
-            else:
-                agent.cash, agent.stocks = 1000.0, 0.0
-                if hasattr(agent, 'prev_diff'): agent.prev_diff = 0.0
-                if hasattr(agent, 'first_step'): agent.first_step = True
+            agent.cash = 1000.0
+            agent.stocks = 0.0
+            agent.trade_history = []  
+            
+            if hasattr(agent, 'prev_diff'): agent.prev_diff = 0.0
+            if hasattr(agent, 'first_step'): agent.first_step = True
+            
+            if hasattr(agent, 'market'): 
+                agent.market = market
 
-        # Симуляция одного прогона
+        run_histories = {agent.name: [agent.capital(start_price)] for agent in all_agents}
+        
         for step in range(steps):
             obs = market.get_obs()
-            price = market.price
+            current_price = market.price
+            
             for agent in all_agents:
-                # Отключаем обучение/исследование для RL
                 try:
-                    agent.act(obs, explore=False)
+                    agent.act(obs, step_index=step, explore=False)
                 except TypeError:
-                    agent.act(obs)
+                    agent.act(obs, step_index=step)
                 
-                run_histories[agent.name].append(agent.capital(price))
+                run_histories[agent.name].append(agent.capital(current_price))
+            
             market.step()
 
-        # Считаем метрики для этого прогона и сохраняем
         for agent in all_agents:
             ret, sharpe, mdd = calculate_metrics(run_histories[agent.name])
+            
             multi_run_metrics[agent.name]["Return (%)"].append(ret)
             multi_run_metrics[agent.name]["Sharpe Ratio"].append(sharpe)
             multi_run_metrics[agent.name]["Max Drawdown (%)"].append(mdd)
             multi_run_metrics[agent.name]["Final Capital ($)"].append(run_histories[agent.name][-1])
         
         last_run_histories = run_histories
-        print(f"Run {run+1}/{n_runs} completed.")
+        
+        if (run + 1) % 10 == 0:
+            print(f"Run {run+1}/{n_runs} completed...")
 
-    # Сбор средних результатов
     final_results = []
     for agent_name, metrics in multi_run_metrics.items():
         final_results.append({
             "Agent": agent_name,
             "Avg Return (%)": np.mean(metrics["Return (%)"]),
-            "Std Return": np.std(metrics["Return (%)"]), # Показывает стабильность
+            "Std Return": np.std(metrics["Return (%)"]), 
             "Avg Sharpe": np.mean(metrics["Sharpe Ratio"]),
             "Avg MaxDD (%)": np.mean(metrics["Max Drawdown (%)"]),
             "Avg Final Cap ($)": np.mean(metrics["Final Capital ($)"])
         })
 
     df = pd.DataFrame(final_results).set_index("Agent")
-    # Округляем для красоты
     df = df.round(2)
+    
+    print("--- Evaluation Finished ---")
     return df.sort_values(by="Avg Final Cap ($)", ascending=False), last_run_histories
-    # return df.sort_values(by="Avg Return (%)", ascending=False), last_run_histories
 
 def plot_equity_curves(histories):
-    """Рисует графики роста капитала всех агентов."""
     plt.figure(figsize=(12, 6))
     
-    # Цветовая схема
     colors = plt.cm.tab10(np.linspace(0, 1, len(histories)))
     
     for (name, history), color in zip(histories.items(), colors):
-        # Выделяем RL агента жирной линией
         if "REINFORCE" in name or "DQN" in name or "RL" in name:
             plt.plot(history, label=name, linewidth=3, color='black', alpha=0.9)
         else:
